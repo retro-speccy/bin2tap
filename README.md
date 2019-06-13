@@ -12,13 +12,13 @@ If the outfile argument is omitted, the resulting file will be named infile.tap.
 https://web.archive.org/web/20110711141601/http://www.zxmodules.de:80/fileformats/tapformat.html
 https://faqwiki.zxnet.co.uk/wiki/TAP_format
 # Open issues and features
-[ ] Accept hex starting address on command line
-[ ] Size check of input file
-[ ] Allow input files bigger than 65534 bytes
-[ ] Add support for Spectrum 128K .tap files
-[ ] Add verbose mode
-[ ] Add silent mode
-[ ] More secure type conversions in the code
-[ ] Beautfy source code...
+- [ ] Accept hex starting address on command line
+- [ ] Size check of input file
+- [ ] Allow input files bigger than 65534 bytes
+- [ ] Add support for Spectrum 128K .tap files
+- [ ] Add verbose mode
+- [ ] Add silent mode
+- [ ] More secure type conversions in the code
+- [ ] Beautfy source code...
 # Contributing
 You are very welcome to contribute to this project, whether it be issue reports or new features. Please contact me before issueing pull requests.
