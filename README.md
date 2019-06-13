@@ -5,7 +5,9 @@ This tool is handy in the workflow of creating a `.tap` file suited for loading 
 
 While there surely are other ways to convert `.tap` files (I have been using a simple assembler file containing just an `INCBIN` directive and the pasmo assembler), I have finally decided to write a converter on my own. Partly to learn how to use [Go](https://golang.org/), [cobra](https://github.com/spf13/cobra), and to understand the inner workings of a `.tap` file. But also because I am of "[the Unix philosophy: Write programs that do one thing and do it well](https://en.wikipedia.org/wiki/Unix_philosophy)".
 # Usage
-	`bin2tap infile.bin [outfile.tap] -a|--address=start_address`
+```shell
+	bin2tap infile.bin [outfile.tap] -a|--address=start_address
+```
 
 If the outfile argument is omitted, the resulting file will be named infile.tap. The starting address paramter is mandatory. The resulting `.tap` file can be loaded with a simple `LOAD ""CODE` command without any further parameters.
 # Credits
@@ -19,6 +21,7 @@ https://faqwiki.zxnet.co.uk/wiki/TAP_format
 - [ ] Add verbose mode
 - [ ] Add silent mode
 - [ ] More secure type conversions in the code
-- [ ] Beautfy source code...
+- [ ] Make source code more Go-like...
 # Contributing
-You are very welcome to contribute to this project, whether it be issue reports or new features. Please contact me before issueing pull requests.
+You are very welcome to contribute to this project, whether it be issue reports or new features.
+Please contact me before issueing pull requests.
