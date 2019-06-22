@@ -27,6 +27,7 @@ import (
     "fmt"
     "io"
     "io/ioutil"
+    "log"
     "math"
     "strconv"
     "strings"
@@ -125,14 +126,14 @@ type TAP_BIN_File struct {
 
 func calcChecksum(databytes []byte) uint8 {
 
-    cs := byte(0)
+    var cs byte = 0
     for _, b := range databytes {
         cs = cs ^ b
     }
     return cs
 }
 
-func (t TAP_BIN_File) SetFilename(f string) error {
+func (t *TAP_BIN_File) SetFilename(f string) error {
 
     asciif := strconv.QuoteToASCII(f)
     if strings.ContainsAny(asciif, "\\") {
@@ -147,22 +148,24 @@ func (t TAP_BIN_File) SetFilename(f string) error {
 
 //TODO: size check of input file
 //TODO: size bigger than 65534
-func (t TAP_BIN_File) ReadBinData(bindata io.Reader) error {
+func (t *TAP_BIN_File) ReadBinData(bindata io.Reader) error {
 
     var err error
     t.bindata.datablock, err = ioutil.ReadAll(bindata)
+    log.Println("Number of bytes read: ", len(t.bindata.datablock))
+
     if err != nil {
         t.bindata.datablock = nil
         return nil
     }
 
     t.header.datalength = uint16(len(t.bindata.datablock))
-    t.bindatalength.length = t.header.datalength + 2 //TODO: das geht auch schöner...
+    t.bindatalength.length = t.header.datalength + 2 //TODO: make this more elegant and flexible...
 
     return nil
 }
 
-func (t TAP_BIN_File) SetStartAddress(a uint16) error {
+func (t *TAP_BIN_File) SetStartAddress(a uint16) error {
 
     if (a + t.header.datalength) > math.MaxUint16 {
         return fmt.Errorf("Start address too high, code will roll over 64K-boundary. Address: %u, Length: %u", a, t.header.datalength)
@@ -173,7 +176,7 @@ func (t TAP_BIN_File) SetStartAddress(a uint16) error {
     return nil
 }
 
-func (t TAP_BIN_File) CalcChecksums() error {
+func (t *TAP_BIN_File) CalcChecksums() error {
 
     buf := &bytes.Buffer{}
     err := binary.Write(buf, binary.BigEndian, t.header)
@@ -187,7 +190,7 @@ func (t TAP_BIN_File) CalcChecksums() error {
     return nil
 }
 
-func (t TAP_BIN_File) Init() error {
+func (t *TAP_BIN_File) Init() error {
 
     t.headerlength.length = 19 //TODO: uint16(len(t.header))
 
@@ -205,7 +208,38 @@ func (t TAP_BIN_File) Init() error {
     return nil
 }
 
-func (t TAP_BIN_File) Write(w io.Writer) error {
+func (t *TAP_BIN_File) Write(w io.Writer) error {
 
-    return binary.Write(w, binary.BigEndian, t)
+    log.Println("t.Write")
+
+    err := binary.Write(w, binary.LittleEndian, t.headerlength)
+    if err != nil {
+        return err
+    }
+
+    err = binary.Write(w, binary.LittleEndian, t.header)
+    if err != nil {
+        return err
+    }
+
+    err = binary.Write(w, binary.LittleEndian, t.bindatalength)
+    if err != nil {
+        return err
+    }
+
+    //TODO: make writes more elegant
+    err = binary.Write(w, binary.LittleEndian, t.bindata.flag)
+    if err != nil {
+        return err
+    }
+    err = binary.Write(w, binary.LittleEndian, t.bindata.datablock)
+    if err != nil {
+        return err
+    }
+    err = binary.Write(w, binary.LittleEndian, t.bindata.checksum)
+    if err != nil {
+        return err
+    }
+
+    return nil
 }
