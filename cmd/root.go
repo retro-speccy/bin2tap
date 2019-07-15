@@ -1,24 +1,8 @@
-/*
-Copyright © 2019 Marton Magyar
+// Copyright © 2019 Marton Magyar
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+// SPDX-License-Identifier: MIT
+// see https://spdx.org/licenses/
 
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
-*/
 package cmd
 
 import (
@@ -30,16 +14,15 @@ import (
   "log"
   "os"
   "path/filepath"
-  "strconv"
   "strings"
 
   "github.com/spf13/cobra"
 )
 
-var Address uint
+var FlagAddress uint
 var SourcePath string
 var MaxUint int
-var Outfile string
+var OutName string
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
@@ -53,48 +36,45 @@ Usage: bin2asm binfile [tapfile] [flags]
 Example: bin2asm myprog.bin -a 32768`,
   Run: func(cmd *cobra.Command, args []string) {
 
-    var t tapfile.TAP_BIN_File
-
-    inDir, inFile := filepath.Split(args[0])
-    name := strings.TrimSuffix(inFile, filepath.Ext(inFile))
-
-    f, err := os.Open(args[0])
+    inDir, inName := filepath.Split(args[0])
+    base := strings.TrimSuffix(inName, filepath.Ext(inName))
+    f, err := os.Open(inName)
     if err != nil {
       log.Fatal(err)
     }
     defer f.Close()
 
-    t.Init()
-    t.SetFilename(name)
-    t.ReadBinData(bufio.NewReader(f))
-    t.SetStartAddress(uint16(Address))
-    t.CalcChecksums()
-
-    if len(Outfile) < 1 {
-      name := strings.TrimSuffix(inFile, filepath.Ext(inFile))
-      Outfile = inDir + name + ".tap"
-    }
-
-    log.Println("Writing to file", Outfile)
-
-    of, err := os.OpenFile(Outfile, os.O_RDWR|os.O_CREATE, 0644)
+    b, err := tapfile.NewBINdata(base, f, uint16(FlagAddress))
     if err != nil {
       log.Fatal(err)
     }
-    defer of.Close()
-    bufof := bufio.NewWriter(of)
 
-    t.Write(bufof)
+    if len(OutName) < 1 {
+      OutName = inDir + base + ".tap"
+    }
 
-    log.Println("written")
+    inFile, err := os.Open(args[0])
+    if err != nil {
+      log.Fatal(err)
+    }
+    defer inFile.Close()
 
-    bufof.Flush()
+    log.Println("Writing to file", OutName)
 
-    //bufos := bufio.NewWriter(os.Stdout)
-    //fmt.Fprint(bufof, "Hello, ")
-    //fmt.Fprint(bufof, "world!\n")
-    //t.Write(bufos)
-    //bufos.Flush()
+    outFile, err := os.Create(OutName)
+    if err != nil {
+      log.Fatal(err)
+    }
+    defer outFile.Close()
+
+    w := bufio.NewWriter(outFile)
+    t := tapfile.NewTAPfileBlockWriter(w)
+
+    b.Write(t)
+
+    //log.Println("buffered bytes:", w.Buffered())
+
+    w.Flush()
   },
   Args: rootArgsValidator,
   //cobra.RangeArgs(1,2)
@@ -148,7 +128,7 @@ func rootArgsValidator(cmd *cobra.Command, args []string) error {
   }
   if len(args) > 1 {
     if b, err := isTapFile(args[1]); !b {
-      Outfile = ""
+      OutName = ""
       if err == nil {
         return fmt.Errorf("second argument is not a valid .tap file name: %s", args[1])
       } else {
@@ -156,7 +136,7 @@ func rootArgsValidator(cmd *cobra.Command, args []string) error {
         return err
       }
     }
-    Outfile = args[1]
+    OutName = args[1]
   }
 
   return nil
@@ -172,10 +152,8 @@ func Execute() {
 }
 
 func init() {
-  var MaxUint uint = (1 << strconv.IntSize) - 1
-
-  rootCmd.PersistentFlags().UintVarP(&Address, "address", "a", MaxUint,
-    "Starting address of binary in Z80 address space, decimal or hex ('0x' prefix)")
+  rootCmd.PersistentFlags().UintVarP(&FlagAddress, "address", "a", 0,
+    "Starting address of binary in Z80 address space, decimmal or hex ('0x' prefix)")
   rootCmd.MarkFlagRequired("address")
   //TODO: check if implement rootCmd.NoOptDefVal("address") = MaxUint
 }

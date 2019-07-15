@@ -1,36 +1,20 @@
-/*
-Copyright © 2019 Marton Magyar
+// Copyright © 2019 Marton Magyar
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+// SPDX-License-Identifier: MIT
+// see https://spdx.org/licenses/
 
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
-*/
 package tapfile
 
 import (
-    "bytes"
-    "encoding/binary"
-    "fmt"
-    "io"
-    "io/ioutil"
-    "log"
-    "math"
-    "strconv"
-    "strings"
+	"bytes"
+	"encoding/binary"
+	"fmt"
+	"io"
+	"io/ioutil"
+	"log"
+	"math"
+	"strconv"
+	"strings"
 )
 
 /*
@@ -54,16 +38,21 @@ Example for a machine code program:
     Block_Data (containing the machine code, e.g. the contents of a .bin-file)
 */
 
-const BASICHeader = 0
-const NumArrayHeader = 1
-const StringArrayHeader = 2
-const BytesHeader = 3
+//const tapBASICHeader uint8 = 0
+//const tapNumArrayHeader uint8 = 1
+//const tapStringArrayHeader uint8 = 2
+const tapBytesHeader uint8 = 3
 
-const HeaderBlock = 0
-const DataBlock = 0xff
+const tapHeaderBlock uint8 = 0
+const tapDataBlock uint8 = 0xff
 
+const tapBlockMaxLength uint16 = math.MaxUint16 - 2
+
+const tapUnused uint16 = 32768
+
+// length block containing the length of the following block
 type Block_Length struct {
-    length uint16 // length of the following data block, not counting this block
+	length uint16 // length of the following data block, not counting this block
 }
 
 /*
@@ -102,144 +91,211 @@ type Block_StringArrayHeader struct {
 }
 */
 type Block_BytesHeader struct {
-    flag         uint8    // always 0. Byte indicating a standard ROM loading header
-    datatype     uint8    // always 3: Byte indicating a bytes header
-    filename     [10]byte // loading name of the program. filled with spaces (CHR$(32))
-    datalength   uint16   // length of the following data (after the header), in case of a SCREEN$ header = 6912
-    startaddress uint16   // start address of the code in the Z80 address space, in case of a SCREEN$ header = 16384
-    unused       uint16   // = 32768
-    checksum     uint8    // simply all bytes (including flag byte) XORed
+	flag         uint8    // always 0. Byte indicating a standard ROM loading header
+	datatype     uint8    // always 3: Byte indicating a bytes header
+	filename     [10]byte // loading name of the program. filled with spaces (CHR$(32))
+	datalength   uint16   // length of the following data (after the header), in case of a SCREEN$ header = 6912
+	startaddress uint16   // start address of the code in the Z80 address space, in case of a SCREEN$ header = 16384
+	unused       uint16   // = 32768
+	checksum     uint8    // simply all bytes (including flag byte) XORed
 }
 
 type Block_Data struct {
-    flag      uint8  // always 255 indicating a standard ROM loading data block or any other value to build a custom data block
-    datablock []byte // the essential data (may be empty)
-    checksum  uint8  // simply all bytes (including flag byte) XORed
+	flag      uint8  // always 255 indicating a standard ROM loading data block or any other value to build a custom data block
+	datablock []byte // the essential data (may be empty)
+	checksum  uint8  // simply all bytes (including flag byte) XORed
 }
 
 type TAP_BIN_File struct {
-    headerlength  Block_Length
-    header        Block_BytesHeader
-    bindatalength Block_Length
-    bindata       Block_Data
+	headerlength  Block_Length
+	header        Block_BytesHeader
+	bindatalength Block_Length
+	bindata       Block_Data
 }
 
-func calcChecksum(databytes []byte) uint8 {
-
-    var cs byte = 0
-    for _, b := range databytes {
-        cs = cs ^ b
-    }
-    return cs
+type BINdata struct {
+	filename     [10]byte // loading name of the program. filled with spaces (CHR$(32))
+	datablock    []byte   // the essential data (may be empty)
+	startaddress uint16   // start address of the code in the Z80 address space, in case of a SCREEN$ header = 16384
 }
 
-func (t *TAP_BIN_File) SetFilename(f string) error {
+/*
+type tapBlockCompleter interface {
+	CompleteBlock() (n int, err error)
+}
 
-    asciif := strconv.QuoteToASCII(f)
-    if strings.ContainsAny(asciif, "\\") {
-        return fmt.Errorf("Illegal characters in tap file name: %s", asciif)
-    }
+type writeCompleter interface {
+	io.Writer
+	tapBlockCompleter
+}
+*/
+type TAPfileBlockWriter struct {
+	buf bytes.Buffer
+	wtr io.Writer
+}
 
-    copy(t.header.filename[:], "          ")
-    copy(t.header.filename[:], f)
+func NewTAPfileBlockWriter(w io.Writer) *TAPfileBlockWriter {
 
-    return nil
+	b := new(TAPfileBlockWriter)
+
+	b.wtr = w
+
+	return b
+}
+
+func (b *TAPfileBlockWriter) Write(p []byte) (int, error) {
+
+	if (len(p) + b.buf.Len()) > int(tapBlockMaxLength) {
+		return 0, fmt.Errorf("Write error, TAP file block is going to become longer than max length of %d", tapBlockMaxLength)
+	}
+
+	n, err := b.buf.Write(p)
+	if err != nil {
+		return 0, err
+	}
+
+	return n, nil
+}
+
+func (b *TAPfileBlockWriter) CompleteBlock() error {
+
+	defer b.buf.Reset()
+
+	if err := binary.Write(b.wtr, binary.LittleEndian, uint16(b.buf.Len()+1)); err != nil {
+		return err
+	}
+	if err := binary.Write(b.wtr, binary.LittleEndian, b.buf.Bytes()); err != nil {
+		return err
+	}
+	if err := binary.Write(b.wtr, binary.LittleEndian, xorChecksum(b.buf.Bytes())); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func xorChecksum(data []byte) uint8 {
+
+	var cs byte = 0
+	for _, b := range data {
+		cs = cs ^ b
+	}
+	return cs
+}
+
+func (b *BINdata) setFilename(f string) error {
+
+	quoted := strconv.QuoteToASCII(f)
+	asciif := strings.Trim(quoted, "\"")
+	//log.Println("f: %s, quoted: %s, asciif: %s", f, quoted, asciif)
+	if f != asciif {
+		return fmt.Errorf("Illegal characters in tap file name: %s", asciif)
+	}
+
+	copy(b.filename[:], "          ")
+	copy(b.filename[:], asciif)
+
+	return nil
 }
 
 //TODO: size check of input file
 //TODO: size bigger than 65534
-func (t *TAP_BIN_File) ReadBinData(bindata io.Reader) error {
+func (b *BINdata) setBinData(bindata io.Reader) error {
 
-    var err error
-    t.bindata.datablock, err = ioutil.ReadAll(bindata)
-    log.Println("Number of bytes read: ", len(t.bindata.datablock))
+	var err error
+	b.datablock, err = ioutil.ReadAll(bindata)
+	if err != nil {
+		b.datablock = nil
+		return err
+	}
 
-    if err != nil {
-        t.bindata.datablock = nil
-        return nil
-    }
+	log.Println("Number of bytes read: ", len(b.datablock))
 
-    t.header.datalength = uint16(len(t.bindata.datablock))
-    t.bindatalength.length = t.header.datalength + 2 //TODO: make this more elegant and flexible...
-
-    return nil
+	return nil
 }
 
-func (t *TAP_BIN_File) SetStartAddress(a uint16) error {
+func (b *BINdata) setStartAddress(a uint16) error {
 
-    if (a + t.header.datalength) > math.MaxUint16 {
-        return fmt.Errorf("Start address too high, code will roll over 64K-boundary. Address: %u, Length: %u", a, t.header.datalength)
-    }
+	if (int(a) + len(b.datablock)) > math.MaxUint16 {
+		return fmt.Errorf("Start address too high, code will roll over 64K-boundary. Address: %d, Length: %d", a, len(b.datablock))
+	}
 
-    t.header.startaddress = a
+	b.startaddress = a
 
-    return nil
+	return nil
 }
 
-func (t *TAP_BIN_File) CalcChecksums() error {
+func NewBINdata(name string, bindata io.Reader, startaddress uint16) (*BINdata, error) {
 
-    buf := &bytes.Buffer{}
-    err := binary.Write(buf, binary.BigEndian, t.header)
-    if err != nil {
-        return err
-    }
-    t.header.checksum = calcChecksum(buf.Bytes())
+	t := new(BINdata)
 
-    t.bindata.checksum = t.bindata.flag ^ calcChecksum(t.bindata.datablock)
+	if err := t.setFilename(name); err != nil {
+		return nil, err
+	}
+	if err := t.setBinData(bindata); err != nil {
+		return nil, err
+	}
+	if err := t.setStartAddress(startaddress); err != nil {
+		return nil, err
+	}
 
-    return nil
+	return t, nil
 }
 
-func (t *TAP_BIN_File) Init() error {
+func (b *BINdata) Read(r io.Reader) error {
 
-    t.headerlength.length = 19 //TODO: uint16(len(t.header))
-
-    t.header.flag = HeaderBlock
-    t.header.datatype = BytesHeader
-    t.header.unused = (math.MaxUint16 + 1) / 2
-    t.header.checksum = 0
-
-    t.bindatalength.length = math.MaxUint16
-
-    t.bindata.flag = DataBlock
-    t.bindata.datablock = nil
-    t.bindata.checksum = 0
-
-    return nil
+	return nil
 }
 
-func (t *TAP_BIN_File) Write(w io.Writer) error {
+func (b *BINdata) writeHeader(w *TAPfileBlockWriter) error {
 
-    log.Println("t.Write")
+	endianness := binary.LittleEndian
 
-    err := binary.Write(w, binary.LittleEndian, t.headerlength)
-    if err != nil {
-        return err
-    }
+	if err := binary.Write(w, endianness, tapHeaderBlock); err != nil {
+		return err
+	}
+	if err := binary.Write(w, endianness, tapBytesHeader); err != nil {
+		return err
+	}
+	if err := binary.Write(w, endianness, b.filename); err != nil {
+		return err
+	}
+	if err := binary.Write(w, endianness, uint16(len(b.datablock))); err != nil {
+		return err
+	}
+	if err := binary.Write(w, endianness, uint16(b.startaddress)); err != nil {
+		return err
+	}
+	if err := binary.Write(w, endianness, tapUnused); err != nil {
+		return err
+	}
 
-    err = binary.Write(w, binary.LittleEndian, t.header)
-    if err != nil {
-        return err
-    }
+	return w.CompleteBlock()
+}
 
-    err = binary.Write(w, binary.LittleEndian, t.bindatalength)
-    if err != nil {
-        return err
-    }
+func (b *BINdata) writeData(w *TAPfileBlockWriter) error {
 
-    //TODO: make writes more elegant
-    err = binary.Write(w, binary.LittleEndian, t.bindata.flag)
-    if err != nil {
-        return err
-    }
-    err = binary.Write(w, binary.LittleEndian, t.bindata.datablock)
-    if err != nil {
-        return err
-    }
-    err = binary.Write(w, binary.LittleEndian, t.bindata.checksum)
-    if err != nil {
-        return err
-    }
+	endianness := binary.LittleEndian
 
-    return nil
+	if err := binary.Write(w, endianness, tapDataBlock); err != nil {
+		return err
+	}
+	if err := binary.Write(w, endianness, b.datablock); err != nil {
+		return err
+	}
+
+	return w.CompleteBlock()
+}
+
+func (b *BINdata) Write(w *TAPfileBlockWriter) error {
+
+	if err := b.writeHeader(w); err != nil {
+		return err
+	}
+
+	if err := b.writeData(w); err != nil {
+		return err
+	}
+
+	return nil
 }

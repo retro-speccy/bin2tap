@@ -12,7 +12,7 @@ This tool is handy in the workflow of creating a *.tap* file suited for loading 
 
 If the outfile argument is omitted, the resulting file will be named *infile.tap*. The starting address is a mandatory parameter. It is a decimal number giving the base address of the machine code in the Z80 address space. The resulting *.tap* file can be loaded with a simple `LOAD ""CODE` command without any further parameters.
 # Credits
-https://web.archive.org/web/20110711141601/http://www.zxmodules.de:80/fileformats/tapformat.html
+http://www.zx-modules.de/fileformats/tapformat.html
 https://faqwiki.zxnet.co.uk/wiki/TAP_format
 # Features
 - [x] Basic *.bin* file reading
